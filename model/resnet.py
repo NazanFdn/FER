@@ -8,6 +8,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.optimizers import SGD, Adam
 from tensorflow.keras import mixed_precision
 import os
+from tensorflow.keras.optimizers import AdamW
 import tensorflow as tf
 
 # Set the TensorFlow backend to use MPS (Metal Performance Shaders)
@@ -21,7 +22,7 @@ print("GPU available:", tf.config.list_physical_devices('GPU'))
 mixed_precision.set_global_policy("mixed_float16")
 
 # Set dataset directory
-data_dir = os.environ.get("DATA_DIR", "/Users/zeynep/PycharmProjects/PythonProject/data/train")
+data_dir = os.environ.get("DATA_DIR", "/Users/zeynep/PycharmProjects/FER/data/train")
 
 # Define data generators
 train_datagen = ImageDataGenerator(
@@ -69,7 +70,6 @@ output_layer = Dense(train_data.num_classes, activation='softmax')(x)
 
 model = Model(inputs=input_layer, outputs=output_layer)
 
-from tensorflow.keras.optimizers import AdamW
 optimizer = AdamW(learning_rate=0.001, weight_decay=1e-4)
 
 model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
