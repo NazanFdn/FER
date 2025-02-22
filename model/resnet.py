@@ -98,7 +98,7 @@ training_time = end_time - start_time
 # Print Final Accuracy and Training Time
 final_train_acc = history.history['accuracy'][-1]
 final_val_acc = history.history['val_accuracy'][-1]
-
+model.save("model.keras")
 print(f"\n Training Completed in {training_time:.2f} seconds")
 print(f"📌 Final Training Accuracy: {final_train_acc:.4f}")
 print(f"📌 Final Validation Accuracy: {final_val_acc:.4f}")
