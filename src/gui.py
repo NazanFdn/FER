@@ -1,16 +1,3 @@
-"""
-Facial Expression Recognition GUI for Border Control
------------------------------------------------------
-Author : Nazan Kafadaroglu
-Date   : 2025-02-01
-Course : Computer Science
-Project: Facial Expression Recognition in Border Control for Augmented Security
-
-Description:
-This GUI demonstrates how a trained CNN-based Facial Expression Recognition (FER)
-system can be used in a border control setting to detect and classify emotions.
-"""
-
 import tkinter as tk
 from tkinter import ttk, filedialog
 from PIL import Image, ImageTk
@@ -38,10 +25,58 @@ class BorderControlFERGUI:
         self.root.title("Border Control Facial Expression Recognition")
         self.root.geometry("800x600")
 
-        # Attempt to load the pre-trained FER model
+        # ---------------------------------------------------------------------
+        # 1) COLOR PALETTE & STYLING (Enhanced for Professional Look)
+        # ---------------------------------------------------------------------
+        # Overall color scheme for professional look
+        self.bg_color = "#1e1e2f"  # Dark background for modern look
+        self.accent_color = "#9B1313"  # Accent red color
+        self.text_color = "#ffffff"  # White text for better contrast
+        self.button_text = "#ffffff"  # White button text for visibility
+        self.button_shadow = "#8e0000"  # Button shadow effect color for 3D look
+
+        # Set root background
+        self.root.configure(bg=self.bg_color)
+
+        # Create a style
+        self.style = ttk.Style()
+        self.style.theme_use("clam")  # 'clam' for a more modern UI style
+
+        # Configure style for frames
+        self.style.configure("Custom.TFrame",
+                             background=self.bg_color)
+
+        # Configure style for labels
+        self.style.configure("Custom.TLabel",
+                             background=self.bg_color,
+                             foreground=self.text_color,
+                             font=("Helvetica", 12))
+
+        # Configure style for headers/bold text
+        self.style.configure("Header.TLabel",
+                             background=self.bg_color,
+                             foreground=self.text_color,
+                             font=("Helvetica", 14, "bold"))
+
+        # Configure style for accent buttons
+        self.style.configure("Accent.TButton",
+                             background=self.accent_color,
+                             foreground=self.button_text,
+                             borderwidth=0,  # Remove the border
+                             focusthickness=3,
+                             focuscolor="none",
+                             padding=10,
+                             relief="flat")  # Flat effect (no 3D border)
+
+        # Add shadow effect to buttons for 3D appearance
+        self.style.map("Accent.TButton",
+                       relief=[('active', 'sunken'), ('!active', 'flat')],
+                       background=[('active', self.button_shadow), ('!active', self.accent_color)])
+
+        # Load pre-trained FER model
         self.load_model()
 
-        # Label mapping (adjust according to your trained model's output layer)
+        # Label mapping
         self.emotion_labels = ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Neutral"]
 
         # Build all GUI elements
@@ -52,7 +87,7 @@ class BorderControlFERGUI:
         Loads the pre-trained Keras model from disk.
         Update the path if your model is saved elsewhere.
         """
-        default_model_path = "model\model.keras"
+        default_model_path = "model_resnet18.keras"
         if os.path.exists(default_model_path):
             try:
                 self.model = tf.keras.models.load_model(default_model_path)
@@ -69,46 +104,43 @@ class BorderControlFERGUI:
         Creates and places all GUI widgets, including disclaimers, buttons,
         canvas for image display, and a results label for predicted emotion.
         """
-        # ------------------ TOP FRAME FOR HEADLINE/DISCLAIMER ------------------ #
-        info_frame = ttk.Frame(self.root, padding=10)
+
+        # ------------------ TOP FRAME / DISCLAIMER ------------------ #
+        info_frame = ttk.Frame(self.root, style="Custom.TFrame", padding=20)
         info_frame.pack(fill=tk.X)
 
-        # Header / disclaimers referencing your project context
         header_label = ttk.Label(
             info_frame,
             text=(
-                "Border Control Facial Expression Recognition System\n"
-                "-------------------------------------------------\n"
-                "This demonstration system classifies facial expressions to aid border control\n"
-                "officers in detecting potential stress or suspicious behavior. Please note:\n"
-                "1) Images are processed locally and not stored.\n"
-                "2) Ethical, privacy, and bias considerations are paramount.\n"
-            ),
+                "Border Control Facial Expression Recognition System\n"),
+            style="Header.TLabel",
             wraplength=780,
             justify="left"
         )
         header_label.pack()
 
         # ------------------ BUTTON FRAME ------------------ #
-        button_frame = ttk.Frame(self.root, padding="10")
-        button_frame.pack(fill=tk.X)
+        button_frame = ttk.Frame(self.root, style="Custom.TFrame", padding=10)
+        button_frame.pack(fill=tk.X, pady=30)
 
-        upload_btn = ttk.Button(button_frame, text="Upload Image", command=self.upload_image)
-        upload_btn.pack(side=tk.LEFT, padx=5)
-
-        # You can add more buttons if needed, e.g. to show logs, or load a different model
+        upload_btn = ttk.Button(
+            button_frame,
+            text="Upload Image",
+            style="Accent.TButton",
+            command=self.upload_image
+        )
+        upload_btn.pack(side=tk.TOP, pady=10)  # Center the button
 
         # ------------------ IMAGE DISPLAY CANVAS ------------------ #
-        # We'll use a 400x400 display area for the uploaded or processed image
-        self.canvas = tk.Canvas(self.root, bg='gray', width=400, height=400)
+        self.canvas = tk.Canvas(self.root, bg='#2e2e3e', width=400, height=400)
         self.canvas.pack(pady=10)
 
         # ------------------ LABEL FOR RESULTS ------------------ #
         self.results_label = ttk.Label(
             self.root,
             text="Predicted Emotion: [None]",
-            font=('Helvetica', 14, 'bold'),
-            padding=10
+            style="Header.TLabel",
+            padding=15
         )
         self.results_label.pack()
 
@@ -127,11 +159,6 @@ class BorderControlFERGUI:
         """
         Reads the image, detects the first face, preprocesses it, and makes a prediction
         using the loaded model. Draws a bounding box on the face for demonstration.
-
-        Parameters
-        ----------
-        file_path : str
-            The path to the chosen image file.
         """
         # Load image with OpenCV
         image_bgr = cv2.imread(file_path)
@@ -145,7 +172,7 @@ class BorderControlFERGUI:
         # Convert to grayscale for face detection
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
 
-        # Use Haar cascade (can be replaced by a more advanced face detector)
+        # Use Haar cascade (or a more advanced detector)
         face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
 
@@ -154,25 +181,24 @@ class BorderControlFERGUI:
             self.display_image(image_rgb)
             return
 
-        # For simplicity, we only process the first face
+        # For simplicity, only the first face
         x, y, w, h = faces[0]
         face_roi = gray[y:y+h, x:x+w]
 
-        # Resize to match your model input. If your model expects 48x48, 64x64, or 224x224, change here
-        target_size = (48, 48)  # Example: 48x48 if that’s your training config
+        # Resize to match your model input (adjust if your model expects 224x224, etc.)
+        target_size = (48, 48)  # Example
         face_roi = cv2.resize(face_roi, target_size)
 
         # Normalize & shape for model
         face_roi = face_roi.astype("float32") / 255.0
-        face_roi = np.expand_dims(face_roi, axis=-1)  # -> (48,48,1)
-        face_roi = np.expand_dims(face_roi, axis=0)   # -> (1,48,48,1)
+        face_roi = np.expand_dims(face_roi, axis=-1)   # (48,48,1)
+        face_roi = np.expand_dims(face_roi, axis=0)    # (1,48,48,1)
 
-        # Check if model is loaded
         if self.model is not None:
             try:
-                predictions = self.model.predict(face_roi)
-                predicted_index = np.argmax(predictions)
-                predicted_emotion = self.emotion_labels[predicted_index]
+                preds = self.model.predict(face_roi)
+                idx = np.argmax(preds)
+                predicted_emotion = self.emotion_labels[idx]
                 self.results_label.config(text=f"Predicted Emotion: {predicted_emotion}")
             except Exception as e:
                 print(f"Error during prediction: {e}")
@@ -189,11 +215,6 @@ class BorderControlFERGUI:
     def display_image(self, image_rgb):
         """
         Utility function to display an RGB image on the Tkinter canvas.
-
-        Parameters
-        ----------
-        image_rgb : np.ndarray
-            The image in RGB format (height x width x channels).
         """
         # Set display size
         display_size = (400, 400)
@@ -205,12 +226,12 @@ class BorderControlFERGUI:
 
         self.canvas.delete("all")
         self.canvas.create_image(
-            display_size[0] // 2,
-            display_size[1] // 2,
+            display_size[0]//2,
+            display_size[1]//2,
             image=tk_img,
             anchor=tk.CENTER
         )
-        # Keep a reference so it’s not garbage-collected
+        # Keep a reference to avoid garbage collection
         self.canvas.image = tk_img
 
 
