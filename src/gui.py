@@ -5,6 +5,10 @@ import cv2
 import numpy as np
 import tensorflow as tf
 import os
+#from src.face_detector import detect_face  # Importing face detection module
+from src.preprocess import preprocess_image  # Importing preprocessing module
+from src.dlib_detetctor import detect_face_dlib
+
 
 class BorderControlFERGUI:
     """
@@ -87,7 +91,7 @@ class BorderControlFERGUI:
         Loads the pre-trained Keras model from disk.
         Update the path if your model is saved elsewhere.
         """
-        default_model_path = "model_resnet18.keras"
+        default_model_path = "model.keras"
         if os.path.exists(default_model_path):
             try:
                 self.model = tf.keras.models.load_model(default_model_path)
@@ -160,57 +164,30 @@ class BorderControlFERGUI:
         Reads the image, detects the first face, preprocesses it, and makes a prediction
         using the loaded model. Draws a bounding box on the face for demonstration.
         """
-        # Load image with OpenCV
-        image_bgr = cv2.imread(file_path)
-        if image_bgr is None:
-            self.results_label.config(text="Error: Unable to open image.")
-            return
+        try:
+            # Detect face using the face_detection module
+            face_roi, x, y, w, h, image_bgr = detect_face_dlib(file_path)
 
-        # Convert from BGR -> RGB for display
-        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+            # Preprocess the image using the preprocessing module
+            preprocessed_face = preprocess_image(face_roi)
 
-        # Convert to grayscale for face detection
-        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
-
-        # Use Haar cascade (or a more advanced detector)
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
-
-        if len(faces) == 0:
-            self.results_label.config(text="No face detected.")
-            self.display_image(image_rgb)
-            return
-
-        # For simplicity, only the first face
-        x, y, w, h = faces[0]
-        face_roi = gray[y:y+h, x:x+w]
-
-        # Resize to match your model input (adjust if your model expects 224x224, etc.)
-        target_size = (48, 48)  # Example
-        face_roi = cv2.resize(face_roi, target_size)
-
-        # Normalize & shape for model
-        face_roi = face_roi.astype("float32") / 255.0
-        face_roi = np.expand_dims(face_roi, axis=-1)   # (48,48,1)
-        face_roi = np.expand_dims(face_roi, axis=0)    # (1,48,48,1)
-
-        if self.model is not None:
-            try:
-                preds = self.model.predict(face_roi)
+            # Predict emotion
+            if self.model is not None:
+                preds = self.model.predict(preprocessed_face)
                 idx = np.argmax(preds)
                 predicted_emotion = self.emotion_labels[idx]
                 self.results_label.config(text=f"Predicted Emotion: {predicted_emotion}")
-            except Exception as e:
-                print(f"Error during prediction: {e}")
-                self.results_label.config(text="Error: Model prediction failed.")
-        else:
-            self.results_label.config(text="Model not loaded. Please check your model file path.")
+            else:
+                self.results_label.config(text="Model not loaded. Please check your model file path.")
 
-        # Draw bounding box on the main image
-        cv2.rectangle(image_rgb, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            # Draw bounding box on the main image
+            cv2.rectangle(image_bgr, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
-        # Display annotated image
-        self.display_image(image_rgb)
+            # Display annotated image
+            self.display_image(image_bgr)
+
+        except Exception as e:
+            self.results_label.config(text=f"Error: {str(e)}")
 
     def display_image(self, image_rgb):
         """
