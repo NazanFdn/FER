@@ -64,7 +64,7 @@ class BorderControlFERGUI:
         """
         Loads the pre-trained Keras model from disk.
         """
-        default_model_path = "model.keras"
+        default_model_path = "model/model.keras"
         if os.path.exists(default_model_path):
             try:
                 self.model = tf.keras.models.load_model(default_model_path)
@@ -128,9 +128,20 @@ class BorderControlFERGUI:
 
                 # Predict emotion
                 if self.model is not None:
+                    # Get the model's predictions
                     preds = self.model.predict(preprocessed_face)
-                    idx = np.argmax(preds)
-                    predicted_emotion = self.emotion_labels[idx]
+
+                    # Print the raw output of the model for debugging
+                    print("Model output (raw probabilities):", preds)
+
+                    # Check the predicted class
+                    predicted_class = np.argmax(preds)
+                    print(f"Predicted class index: {predicted_class}")
+                    print(f"Predicted emotion: {self.emotion_labels[predicted_class]}")
+
+                    # Get the predicted emotion label
+                    predicted_emotion = self.emotion_labels[predicted_class]
+
                     self.results_label.config(text=f"Predicted Emotion: {predicted_emotion}")
                 else:
                     self.results_label.config(text="Model not loaded. Please check your model file path.")
@@ -144,6 +155,7 @@ class BorderControlFERGUI:
             except Exception as e:
                 self.results_label.config(text=f"Error: {str(e)}")
 
+        # Keep capturing frames
         self.root.after(10, self.capture_frames)
 
     def display_image(self, image_rgb):

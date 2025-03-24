@@ -1,5 +1,5 @@
-import numpy as np
 import cv2
+import numpy as np
 
 def preprocess_image(face_roi, target_size=(64, 64)):
     """
