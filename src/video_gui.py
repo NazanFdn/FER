@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import tensorflow as tf
 import os
-from src.preprocess import preprocess_image  # Importing preprocessing module
+from src.preprocess import preprocess_image
 from src.opencv_detector import detect_face_opencv
 
 class BorderControlFERGUI:

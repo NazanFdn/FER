@@ -16,6 +16,7 @@ setup.`gui.py` contains the model loading mechanism and the actual GUI.
 import logging
 #from src.gui import launch_gui
 from src.video_gui import launch_gui
+#from src.final_gui import launch_gui
 
 def setup_logging():
     logging.basicConfig(
