@@ -94,7 +94,7 @@ class BorderControlFERGUI:
         """
         Loads the pre-trained Keras model from disk.
         """
-        default_model_path = "model/model.keras"
+        default_model_path = "model/mobilenetV2_fer_model2.keras"
         if os.path.exists(default_model_path):
             try:
                 self.model = tf.keras.models.load_model(default_model_path)
