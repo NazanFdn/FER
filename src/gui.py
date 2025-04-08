@@ -1,6 +1,8 @@
+
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
+import torchvision.transforms as T
 import cv2
 import numpy as np
 import torch
@@ -9,23 +11,20 @@ import time
 import psutil
 from datetime import datetime
 
-# Matplotlib imports
+# Custom face-detection function that uses OpenCV
+from src.opencv_detector import detect_face_opencv
+
+# Matplotlib imports (for plotting charts in Tkinter)
 import matplotlib
-matplotlib.use("Agg")
+matplotlib.use("Agg")  # Non-interactive backend
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Import your masked ResNet from the separate Python file
-# e.g. "masked_resnet.py" in the same directory or in a src folder
+# Import the model
 from model.masking import MaskedResNet
-from src.opencv_detector import detect_face_opencv
 
-
-################################################################################
-# If you have a separate "auth_manager.py", import it:
-# from auth_manager import authenticate_user
-# We'll define a fallback here:
-################################################################################
+# Try to import a custom auth manager for the login screen
+# If it's not found, use a simple fallback method
 try:
     from auth_manager import authenticate_user
 except ImportError:
@@ -33,23 +32,47 @@ except ImportError:
         return (username == "admin" and password == "admin")
 
 
-################################################################################
-# Preprocessing: from face ROI -> (1,48,48,1) in NumPy
-################################################################################
+###############################################################################
+# Preprocessing: from face ROI
+###############################################################################
 def preprocess_image(face_roi):
-    face_gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)        # shape (H,W)
-    face_resized = cv2.resize(face_gray, (48, 48))                # shape (48,48)
+    """
+    Preprocess the detected face ROI for our ResNet model:
+      1) Convert to grayscale (although the face might already be BGR).
+      2) Resize to (48,48). The dataset contains
+      3) Normalize pixel values to [0,1].
+      4) Replicate to 3 channels (since ResNet expects 3-channel input).
+      5) Convert to a torch.Tensor and apply the same mean/std normalization
+         used in training.
+      6) Add a batch dimension so shape => (1,3,48,48).
+    """
+    # Convert ROI from BGR to grayscale
+    face_gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+    # Resize the face to 48x48 (FER standard resolution)
+    face_resized = cv2.resize(face_gray, (48, 48))
+    # Normalize pixel values to [0,1]
     face_normalized = face_resized / 255.0
-    # Expand dims => (1,48,48,1)
-    face_expanded = np.expand_dims(face_normalized, axis=-1)
-    face_expanded = np.expand_dims(face_expanded, axis=0)
-    return face_expanded
+    # Expand grayscale image to 3 channels
+    face_normalized = np.repeat(face_normalized[:, :, np.newaxis], 3, axis=2)
+
+    # Convert NumPy array -> PyTorch tensor
+    face_tensor = T.ToTensor()(face_normalized).type(torch.float32)
+    # Apply the same mean/std normalization used by ResNet
+    face_tensor = T.Normalize([0.485, 0.456, 0.406],
+                              [0.229, 0.224, 0.225])(face_tensor)
+    # Add a batch dimension => shape (1,3,48,48)
+    face_tensor = face_tensor.unsqueeze(0)
+    return face_tensor
 
 
-################################################################################
-# Full-screen login window
-################################################################################
+###############################################################################
+# Full-Screen Login Window
+###############################################################################
 def show_login_window():
+    """
+    Displays a full-screen login window that requires the user to enter
+    a username and password. Closes upon successful authentication or ESC key.
+    """
     login_window = tk.Toplevel()
     login_window.title("Login")
     login_window.attributes("-fullscreen", True)
@@ -57,14 +80,17 @@ def show_login_window():
     title_label = tk.Label(login_window, text="Login", font=("Helvetica", 24))
     title_label.pack(pady=50)
 
+    # Username
     tk.Label(login_window, text="Username:", font=("Helvetica", 16)).pack(pady=5)
     username_entry = tk.Entry(login_window, font=("Helvetica", 16))
     username_entry.pack()
 
+    # Password
     tk.Label(login_window, text="Password:", font=("Helvetica", 16)).pack(pady=5)
     password_entry = tk.Entry(login_window, show="*", font=("Helvetica", 16))
     password_entry.pack()
 
+    # Attempt login callback
     def attempt_login():
         username = username_entry.get()
         password = password_entry.get()
@@ -74,26 +100,43 @@ def show_login_window():
         else:
             messagebox.showerror("Login Failed", "Invalid username or password.")
 
-    tk.Button(login_window, text="Login", font=("Helvetica", 16), command=attempt_login).pack(pady=30)
+    # Login button
+    tk.Button(login_window, text="Login", font=("Helvetica", 16),
+              command=attempt_login).pack(pady=30)
 
+    # Allow exiting from full-screen via the ESC key
     def exit_fullscreen(event=None):
         login_window.attributes("-fullscreen", False)
 
     login_window.bind("<Escape>", exit_fullscreen)
+    # Ensure the login window is modal (captures focus)
     login_window.grab_set()
     login_window.focus_set()
 
 
-################################################################################
-# Main Application Class
-################################################################################
+###############################################################################
+# Main GUI Application Class
+###############################################################################
 class BorderControlFERGUI:
+    """
+    Main class for the Facial Expression Recognition (FER) GUI application.
+    Handles:
+      - Model loading
+      - Webcam / video analysis
+      - Real-time emotion detection
+      - Chart displays (confidence bar chart + session emotion counts)
+      - System resource usage
+    """
     def __init__(self, root):
+        """
+        Initialize the GUI, including layout, styling, model loading,
+        and the initial login window.
+        """
         self.root = root
         self.root.title("Facial Expression Recognition System")
         self.root.geometry("1000x700")
 
-        # -- Color Palette and Styling --
+        # Define the color palette and styling for the UI
         self.bg_color = "#1e1e2f"
         self.accent_color = "#9B1313"
         self.text_color = "#ffffff"
@@ -101,7 +144,7 @@ class BorderControlFERGUI:
         self.button_shadow = "#8e0000"
         self.root.configure(bg=self.bg_color)
 
-        # Tkinter Style
+        # Use ttk Style to customize the look
         self.style = ttk.Style()
         self.style.theme_use("clam")
         self.style.configure("Custom.TFrame", background=self.bg_color)
@@ -128,92 +171,111 @@ class BorderControlFERGUI:
             relief="raised",
             anchor="center"
         )
+        # Map the button style to reflect pressed and active states
         self.style.map(
             "Accent.TButton",
             relief=[('pressed', 'sunken'), ('active', 'ridge')],
             background=[('active', self.button_shadow), ('!active', self.accent_color)]
         )
 
-        # Load model (PyTorch)
+        # Load the PyTorch model (MaskedResNet)
         self.load_model()
 
-        # Emotion labels
-        self.emotion_labels = ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Neutral"]
+        # Define emotion labels (7 typical FER classes)
+        self.emotion_labels = ["Angry", "Disgust", "Fear", "Happy", "Neutral", "Sad", "Surprise"]
+        # Emotions considered "high risk"
         self.high_risk_emotions = {"Angry", "Fear"}
-        self.danger_threshold = 0.70
+        # Confidence threshold for "alert" in high-risk emotions
+        self.danger_threshold = 0.80
 
-        # Flags & Variables
+        # Flags & Variables controlling webcam and video states
         self.is_webcam_running = False
         self.is_paused = False
         self.video_cap = None
         self.frame_count = 0
         self.last_prediction_time = time.time()
 
-        # Create directory for snapshots if needed
+        # Create a folder for storing screenshots if it doesn't exist
         os.makedirs("snapshots", exist_ok=True)
 
-        # Canvas display
+        # Canvas dimensions
         self.canvas_width = 600
         self.canvas_height = 450
 
-        # Track session emotion counts
+        # Track count of recognized emotions during the session
         self.emotion_counts = {label: 0 for label in self.emotion_labels}
 
-        # Build GUI
+        # Build the overall GUI layout
         self.create_widgets()
 
-        # Show login window
+        # Show the login window (covers the main app until login)
         show_login_window()
 
     ############################################################################
-    # Load PyTorch Model Instead of tf.keras
+    # Load PyTorch Model
     ############################################################################
     def load_model(self):
-        default_model_path = "/Users/zeynep/PycharmProjects/FER/model/best_masked_resnet18_48x48.pth"
+        """
+        Loads a trained PyTorch model (MaskedResNet) from a .pth file.
+        If the file doesn't exist, sets self.model to None.
+        """
+        default_model_path = "/Users/zeynep/PycharmProjects/FER/model/best_model.pth"
         if not os.path.exists(default_model_path):
             print("No model found at:", default_model_path)
             self.model = None
             return
 
         try:
-            # Initialize a masked ResNet with the same structure as training
+            # Decide whether to use CPU or GPU
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-            # match your training setup: resnet18, pretrained=False (since we have the .pth)
-            self.model = MaskedResNet(arch="resnet18", pretrained=False, num_classes=7, dropout_p=0.3)
+            # Instantiate the MaskedResNet
+            #   arch="resnet18", pretrained=False (since we have a fine-tuned .pth),
+            #   num_classes=7, dropout_p=0.3
+            self.model = MaskedResNet(arch="resnet18", pretrained=False,
+                                      num_classes=7, dropout_p=0.3)
+            # Load the saved weights
             state_dict = torch.load(default_model_path, map_location=self.device)
             self.model.load_state_dict(state_dict)
+
+            # Set the model to evaluation mode
             self.model.eval()
             self.model.to(self.device)
 
-            print(f"PyTorch model loaded from {default_model_path}")
+            print(f"[INFO] PyTorch model loaded from {default_model_path}")
         except Exception as e:
-            print(f"Error loading PyTorch model: {e}")
+            print(f"[ERROR] Error loading PyTorch model: {e}")
             self.model = None
 
     ############################################################################
-    # Create Widgets
+    # Create Widgets and Layout
     ############################################################################
     def create_widgets(self):
+        """
+        Builds the user interface components: top info frame, controls,
+        canvas for video, charts, and status labels.
+        """
         # ---------- Top Info Frame ----------
         info_frame = ttk.Frame(self.root, style="Custom.TFrame", padding=20)
         info_frame.pack(fill=tk.X)
         header_label = ttk.Label(
             info_frame,
-            text="Facial Expression Recognition System\nBorder Security Prototype",
+            text="Facial Expression Recognition System\nBorder Security",
             style="Header.TLabel",
             wraplength=980,
             justify="left"
         )
         header_label.pack()
 
-        # ---------- Button Frame ----------
+        # ---------- Button Frame (top row of buttons) ----------
         button_frame = ttk.Frame(self.root, style="Custom.TFrame", padding=10)
         button_frame.pack(fill=tk.X, pady=5)
 
-        for i in range(4):
+        # We'll arrange these in 3 columns
+        for i in range(3):
             button_frame.columnconfigure(i, weight=1)
 
+        # Start/Stop webcam button
         self.webcam_btn = ttk.Button(
             button_frame,
             text="Start Webcam",
@@ -222,6 +284,7 @@ class BorderControlFERGUI:
         )
         self.webcam_btn.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
 
+        # Pause/Resume detection button
         self.pause_btn = ttk.Button(
             button_frame,
             text="Pause/Resume",
@@ -230,6 +293,7 @@ class BorderControlFERGUI:
         )
         self.pause_btn.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
 
+        # Upload video button
         upload_video_btn = ttk.Button(
             button_frame,
             text="Upload Video",
@@ -238,18 +302,11 @@ class BorderControlFERGUI:
         )
         upload_video_btn.grid(row=0, column=2, padx=10, pady=5, sticky="nsew")
 
-        upload_image_btn = ttk.Button(
-            button_frame,
-            text="Upload Image",
-            style="Accent.TButton",
-            command=self.upload_image
-        )
-        upload_image_btn.grid(row=0, column=3, padx=10, pady=5, sticky="nsew")
-
-        # ---------- Secondary Controls ----------
+        # ---------- Secondary Controls (camera index, threshold, etc.) ----------
         controls_frame = ttk.Frame(self.root, style="Custom.TFrame", padding=5)
         controls_frame.pack(fill=tk.X)
 
+        # Camera index selection
         ttk.Label(
             controls_frame,
             text="Camera Index:",
@@ -265,6 +322,7 @@ class BorderControlFERGUI:
         )
         self.camera_combo.pack(side=tk.LEFT, padx=(0, 15))
 
+        # Danger threshold for alert
         ttk.Label(
             controls_frame,
             text="Danger Threshold:",
@@ -279,6 +337,7 @@ class BorderControlFERGUI:
         )
         threshold_entry.pack(side=tk.LEFT, padx=(0, 15))
 
+        # CPU usage label
         self.resource_label = ttk.Label(
             controls_frame,
             text="CPU Usage: 0%",
@@ -290,7 +349,7 @@ class BorderControlFERGUI:
         main_frame = ttk.Frame(self.root, style="Custom.TFrame", padding=5)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Canvas for video feed
+        # Canvas to display the video frames
         self.canvas = tk.Canvas(
             main_frame,
             bg='#2e2e3e',
@@ -301,7 +360,7 @@ class BorderControlFERGUI:
         self.canvas.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=10, pady=10)
         self.canvas.bind("<Configure>", self.on_canvas_configure)
 
-        # 1) Bar Chart (top-right)
+        # 1) Bar Chart (top-right) - for the current model's output confidences
         self.fig = Figure(figsize=(3, 2), dpi=100)
         self.ax = self.fig.add_subplot(111)
         self.ax.set_ylim([0, 1])
@@ -310,19 +369,20 @@ class BorderControlFERGUI:
         self.bar_canvas = FigureCanvasTkAgg(self.fig, master=main_frame)
         self.bar_canvas.get_tk_widget().grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
-        # 2) Session Emotions (bottom-right)
+        # 2) Session Emotions (bottom-right) - a bar chart counting how often each emotion appears
         self.fig2 = Figure(figsize=(3, 2), dpi=100)
         self.ax2 = self.fig2.add_subplot(111)
         self.ax2.set_title("Session Emotions (Counts)")
         self.spectrum_canvas = FigureCanvasTkAgg(self.fig2, master=main_frame)
         self.spectrum_canvas.get_tk_widget().grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
 
+        # Make the main frame responsive
         main_frame.columnconfigure(0, weight=2)
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(0, weight=1)
         main_frame.rowconfigure(1, weight=1)
 
-        # Results label
+        # A label to display the most recent prediction text
         self.results_label = ttk.Label(
             self.root,
             text="Predicted Emotion: [None]",
@@ -331,11 +391,14 @@ class BorderControlFERGUI:
         )
         self.results_label.pack()
 
-        # Periodic CPU usage
+        # Start periodic updates of CPU usage
         self.update_resource_usage()
 
-
     def on_canvas_configure(self, event):
+        """
+        Called whenever the canvas widget is resized.
+        Updates stored width/height so we can correctly scale frames.
+        """
         self.canvas_width = event.width
         self.canvas_height = event.height
 
@@ -343,33 +406,47 @@ class BorderControlFERGUI:
     # HELPER: Clear bar charts
     # ---------------------------------------------------------------------------
     def clear_charts(self):
+        """
+        Clears both the confidence bar chart and the session counts chart.
+        Also can reset the emotion_counts if desired.
+        """
+        # Clear the top bar chart
         self.ax.clear()
         self.ax.set_ylim([0, 1])
         self.ax.set_ylabel("Confidence")
         self.ax.set_title("Emotion Spectrum (Bar Chart)")
         self.bar_canvas.draw()
 
+        # Clear the session counts chart
         self.ax2.clear()
         self.ax2.set_title("Session Emotions (Counts)")
         self.spectrum_canvas.draw()
-        # If you want to reset the session counts:
+
+        # Uncomment if you want to reset the session counts:
         # self.emotion_counts = {label: 0 for label in self.emotion_labels}
 
     # ---------------------------------------------------------------------------
     # Webcam / Video Logic
     # ---------------------------------------------------------------------------
     def toggle_webcam(self):
+        """
+        Toggles the webcam on/off. If currently running, it stops; otherwise starts.
+        """
         if self.is_webcam_running:
             self.stop_webcam()
         else:
             self.start_webcam()
 
     def start_webcam(self):
+        """
+        Opens the webcam stream and starts capturing frames.
+        """
         cam_index = self.camera_index_var.get()
         self.cap = cv2.VideoCapture(cam_index)
         if not self.cap.isOpened():
             self.results_label.config(text="Error: Unable to access the camera.")
             return
+
         self.is_webcam_running = True
         self.is_paused = False
         self.webcam_btn.config(text="Stop Webcam")
@@ -377,6 +454,9 @@ class BorderControlFERGUI:
         self.capture_frames()
 
     def stop_webcam(self):
+        """
+        Stops the webcam stream, releases the capture, and resets UI states.
+        """
         if hasattr(self, 'cap') and self.cap.isOpened():
             self.cap.release()
         self.is_webcam_running = False
@@ -385,6 +465,9 @@ class BorderControlFERGUI:
         self.canvas.delete("all")
 
     def pause_resume(self):
+        """
+        Pauses or resumes detection, for both the webcam or an uploaded video.
+        """
         if not self.is_webcam_running and not (self.video_cap and self.video_cap.isOpened()):
             self.results_label.config(text="No active feed to pause/resume.")
             return
@@ -399,6 +482,10 @@ class BorderControlFERGUI:
                 self.play_video_frames()
 
     def capture_frames(self):
+        """
+        Captures frames from the webcam,
+        runs face detection and classification on each frame.
+        """
         if not self.is_webcam_running or self.is_paused:
             return
         ret, frame = self.cap.read()
@@ -407,70 +494,71 @@ class BorderControlFERGUI:
         self.root.after(10, self.capture_frames)
 
     # ---------------------------------------------------------------------------
-    # Detection / Classification with PyTorch
+    # Detection / Classification
     # ---------------------------------------------------------------------------
     def detect_and_classify(self, frame):
+        """
+        Runs the face detection on a single frame (via detect_face_opencv),
+        then processes the detected face ROI with the model to classify the emotion.
+        Draws results on the canvas.
+        """
         try:
+            # Attempt to detect a face ROI in the current frame
             detection_result = detect_face_opencv(frame)
             if detection_result is None:
                 self.display_image(frame)
                 self.results_label.config(text="No face detected.")
                 return
 
+            # detection_result is (face_roi, x, y, w, h, image_bgr)
             face_roi, x, y, w, h, image_bgr = detection_result
 
+            # If we have a loaded model, run inference
             if self.model is not None:
-                # Preprocess to shape (1,48,48,1) in NumPy
-                preprocessed_face = preprocess_image(face_roi)  # shape (1,48,48,1)
+                face_tensor = preprocess_image(face_roi).to(self.device)
 
-                # Convert to PyTorch tensor => shape (1,1,48,48)
-                face_tensor = torch.from_numpy(preprocessed_face).float()  # shape (1,48,48,1)
-                face_tensor = face_tensor.permute(0, 3, 1, 2)              # => (1,1,48,48)
-                # If your masked model expects 3 channels, replicate
-                face_tensor = face_tensor.expand(-1, 3, -1, -1)            # => (1,3,48,48)
-                face_tensor = face_tensor.to(self.device)
-
-                # Inference
+                # Evaluate model
                 self.model.eval()
                 with torch.no_grad():
                     output = self.model(face_tensor)  # shape (1,7)
+                    probs = torch.softmax(output, dim=1).cpu().numpy()[0]
+                    predicted_class = np.argmax(probs)
+                    predicted_emotion = self.emotion_labels[predicted_class]
+                    confidence = probs[predicted_class]
 
-                # Softmax -> predictions
-                probs = torch.softmax(output, dim=1).cpu().numpy()[0]  # shape (7,)
-                predicted_class = np.argmax(probs)
-                predicted_emotion = self.emotion_labels[predicted_class]
-                confidence = probs[predicted_class]
-
-                # 1) Update label
+                # Update textual result
                 self.results_label.config(
-                    text=f"Predicted Emotion: {predicted_emotion} ({confidence*100:.1f}%)"
+                    text=f"Predicted Emotion: {predicted_emotion} ({confidence * 100:.1f}%)"
                 )
-
-                # 2) Update bar chart
+                # Update the bar chart with confidence values
                 self.update_bar_chart(probs)
-
-                # 3) Update counts
+                # Update the session counts chart
                 self.update_emotion_counts_chart(predicted_emotion)
 
-                # 4) High-risk => alert
+                # Draw bounding box around the face
                 color = (0, 255, 0)
-                self.danger_threshold = self.threshold_var.get()
-                if (predicted_emotion in self.high_risk_emotions) and (confidence >= self.danger_threshold):
+                # If it's a high-risk emotion over threshold, turn box red & alert
+                if predicted_emotion in self.high_risk_emotions and confidence >= self.danger_threshold:
                     color = (0, 0, 255)
-                    self.trigger_alert(frame, predicted_emotion, confidence)
+                    self.trigger_alert(image_bgr, predicted_emotion, confidence)
 
-                # 5) Draw bounding box
+                # Draw the face rectangle on the displayed image
                 cv2.rectangle(image_bgr, (x, y), (x + w, y + h), color, 2)
                 self.display_image(image_bgr)
             else:
+                # If no model is loaded, just show the image
                 self.results_label.config(text="Model not loaded.")
                 self.display_image(image_bgr)
-
         except Exception as e:
             self.results_label.config(text=f"Error: {str(e)}")
 
     def display_image(self, image_bgr):
-        frame_resized = cv2.resize(image_bgr, (self.canvas_width, self.canvas_height), interpolation=cv2.INTER_AREA)
+        """
+        Utility to draw a cv2 BGR image on the main Tkinter canvas.
+        Resizes to fit the canvas, then converts to PIL for Tkinter compatibility.
+        """
+        frame_resized = cv2.resize(image_bgr, (self.canvas_width, self.canvas_height),
+                                   interpolation=cv2.INTER_AREA)
         pil_img = Image.fromarray(frame_resized)
         tk_img = ImageTk.PhotoImage(pil_img)
         self.canvas.delete("all")
@@ -481,6 +569,10 @@ class BorderControlFERGUI:
     # Video Playback
     # ---------------------------------------------------------------------------
     def upload_video(self):
+        """
+        Opens a file dialog to select a local video file, then starts playback
+        and performs face detection+classification on each frame.
+        """
         self.clear_charts()
         self.canvas.delete("all")
         self.results_label.config(text="Predicted Emotion: [None]")
@@ -493,6 +585,10 @@ class BorderControlFERGUI:
             print("No video file selected.")
 
     def start_video_playback(self, file_path):
+        """
+        Initiate video capture from a selected file, release any previous capture,
+        and start reading frames.
+        """
         if self.is_webcam_running:
             self.stop_webcam()
         if hasattr(self, 'video_cap') and self.video_cap and self.video_cap.isOpened():
@@ -518,8 +614,14 @@ class BorderControlFERGUI:
 
         ret, frame = self.video_cap.read()
         if not ret:
+            # The video is finished
             self.video_cap.release()
             self.results_label.config(text="Video playback finished.")
+
+            # Optionally clear both the canvas and the charts
+            self.canvas.delete("all")
+            self.clear_charts()
+
             return
 
         self.frame_count += 1
@@ -531,9 +633,9 @@ class BorderControlFERGUI:
 
         self.root.after(15, self.play_video_frames)
 
-    # ---------------------------------------------------------------------------
+    """
     # Image Upload
-    # ---------------------------------------------------------------------------
+
     def upload_image(self):
         self.clear_charts()
         self.canvas.delete("all")
@@ -596,11 +698,16 @@ class BorderControlFERGUI:
         else:
             self.results_label.config(text="Model not loaded.")
             self.display_image(image_bgr)
+    """
 
     # ---------------------------------------------------------------------------
     # Chart Updates
     # ---------------------------------------------------------------------------
     def update_bar_chart(self, predictions):
+        """
+        Updates the top-right bar chart with the current model output confidences.
+        predictions: a list or array of length 7 with values in [0,1].
+        """
         self.ax.clear()
         self.ax.bar(self.emotion_labels, predictions)
         self.ax.set_ylim([0, 1])
@@ -613,10 +720,15 @@ class BorderControlFERGUI:
         self.bar_canvas.draw()
 
     def update_emotion_counts_chart(self, predicted_emotion):
+        """
+        Increments the count for the newly predicted emotion,
+        and refreshes the session-counts bar chart.
+        """
         self.emotion_counts[predicted_emotion] += 1
         self.ax2.clear()
         emotions = list(self.emotion_counts.keys())
         counts = list(self.emotion_counts.values())
+        # Plot bar chart of how many times each emotion has been detected
         self.ax2.bar(emotions, counts, color="orange")
         self.ax2.set_title("Session Emotions (Counts)")
         self.ax2.tick_params(axis='x', labelsize=8)
@@ -626,6 +738,11 @@ class BorderControlFERGUI:
         self.spectrum_canvas.draw()
 
     def trigger_alert(self, frame_bgr, emotion, confidence):
+        """
+        Triggers an alert if a high-risk emotion is detected above the danger threshold.
+        - Plays a system bell sound.
+        - Saves a snapshot of the face with a timestamp.
+        """
         self.root.bell()
         alert_msg = f"ALERT! High-risk emotion detected: {emotion} ({confidence*100:.1f}%)"
         print(alert_msg)
@@ -638,15 +755,24 @@ class BorderControlFERGUI:
     # Resource Usage
     # ---------------------------------------------------------------------------
     def update_resource_usage(self):
+        """
+        Periodically updates and displays the system's CPU usage in the UI.
+        Uses psutil.cpu_percent() to get CPU usage. Schedules itself again after 2s.
+        """
         cpu_percent = psutil.cpu_percent(interval=None)
         self.resource_label.config(text=f"CPU Usage: {cpu_percent:.0f}%")
+        # Re-run this function after 2000ms (2 seconds)
         self.root.after(2000, self.update_resource_usage)
 
 
-################################################################################
+###############################################################################
 # Main Entry Point
-################################################################################
+###############################################################################
 def launch_gui():
+    """
+    Creates the main Tkinter window, initializes the BorderControlFERGUI,
+    and starts the Tk event loop.
+    """
     root = tk.Tk()
     app = BorderControlFERGUI(root)
     root.mainloop()

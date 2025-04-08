@@ -1,97 +1,125 @@
-"""
-inference.py
 
-Runs inference on a test directory with 7 subfolders:
-Angry, Disgust, Fear, Happy, Sad, Surprise, Neutral.
-Each subfolder contains images for that emotion class.
-Stores the ground-truth and predicted labels in an .npz file
-for quick evaluation later.
-"""
-
-import os
-import cv2
+import unittest
+import torch
+import torch.nn as nn
 import numpy as np
-import tensorflow as tf
+import cv2
+import torchvision.transforms as T
+from model.masking import MaskedResNet, MaskModule
 
-def preprocess_image(face_bgr):
+
+# If the preprocess_image function is defined in the same module or another module,
+# import it appropriately. Here, we assume it is defined in the current scope.
+def preprocess_image(face_roi):
     """
-    Convert the BGR image to grayscale, resize to (48,48), scale to [0,1],
-    then expand dims to (1,48,48,1) for model input.
+    Preprocess the detected face ROI ResNet model:
+      1) Convert to grayscale.
+      2) Resize to 48x48.
+      3) Normalize pixel values to [0,1].
+      4) Replicate to 3 channels (ResNet expects 3 channels).
+      5) Convert to a torch.Tensor and normalize with ImageNet stats.
+      6) Add a batch dimension so that shape becomes (1, 3, 48, 48).
     """
-    face_gray = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2GRAY)
+    # Convert from BGR to grayscale
+    face_gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+    # Resize to 48x48
     face_resized = cv2.resize(face_gray, (48, 48))
+    # Normalize pixel values to [0,1]
     face_normalized = face_resized / 255.0
-    face_expanded = np.expand_dims(face_normalized, axis=-1)  # shape (48,48,1)
-    face_expanded = np.expand_dims(face_expanded, axis=0)     # shape (1,48,48,1)
-    return face_expanded
+    # Expand grayscale image to 3 channels
+    face_normalized = np.repeat(face_normalized[:, :, np.newaxis], 3, axis=2)
+    # Convert to a PyTorch tensor
+    face_tensor = T.ToTensor()(face_normalized).type(torch.float32)
+    # Normalize using ImageNet mean and std
+    face_tensor = T.Normalize([0.485, 0.456, 0.406],
+                              [0.229, 0.224, 0.225])(face_tensor)
+    # Add batch dimension: (1, 3, 48, 48)
+    face_tensor = face_tensor.unsqueeze(0)
+    return face_tensor
 
-def main():
-    model_path = "/Users/zeynep/PycharmProjects/FER/model/mobilenetV2_fer_model_mehmet.keras"
-    if not os.path.exists(model_path):
-        print(f"[ERROR] Model file not found at: {model_path}")
-        return
 
-    model = tf.keras.models.load_model(model_path)
-    print(f"[INFO] Loaded model from {model_path}")
+class TestMaskModule(unittest.TestCase):
+    def test_mask_module_output_shape(self):
+        """
+        Test that the MaskModule produces an output mask with the same dimensions as its input.
+        """
+        batch_size = 2
+        channels = 32
+        height, width = 12, 12
+        dummy_input = torch.randn(batch_size, channels, height, width)
+        # Create a MaskModule instance that expects 32 input and output channels.
+        mask_module = MaskModule(in_channels=channels, out_channels=channels, depth=1)
+        # Forward the dummy input through the mask module.
+        mask = mask_module(dummy_input)
+        # Verify the output mask has the same shape as the input.
+        self.assertEqual(mask.shape, dummy_input.shape,
+                         "Output mask shape must equal the input shape.")
 
-    # Define your emotion labels in the same order used by your model
-    emotion_labels = ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Neutral"]
-    label_to_index = {
-        "Angry": 0,
-        "Disgust": 1,
-        "Fear": 2,
-        "Happy": 3,
-        "Sad": 4,
-        "Surprise": 5,
-        "Neutral": 6
-    }
+    def test_mask_module_value_range(self):
+        """
+        Test that the values output by MaskModule are in the range [-1, +1] (due to tanh activation).
+        """
+        batch_size = 2
+        channels = 16
+        height, width = 10, 10
+        dummy_input = torch.randn(batch_size, channels, height, width)
+        mask_module = MaskModule(in_channels=channels, out_channels=channels, depth=1)
+        mask = mask_module(dummy_input)
+        # Assert that all values in the mask are at most 1 and at least -1.
+        self.assertTrue(torch.all(mask <= 1), "All mask values should be <= 1")
+        self.assertTrue(torch.all(mask >= -1), "All mask values should be >= -1")
 
-    test_dir = "/Users/zeynep/PycharmProjects/FER/data/test"
-    if not os.path.exists(test_dir):
-        print(f"[ERROR] Test directory '{test_dir}' not found.")
-        return
 
-    # We'll collect ground truth (y_true) and predictions (y_pred)
-    y_true = []
-    y_pred = []
+class TestMaskedResNet(unittest.TestCase):
+    def test_masked_resnet_forward_shape(self):
+        """
+        Test the forward pass of MaskedResNet.
+        Create a dummy input with shape [batch_size, 3, 48, 48] and verify that
+        the output has shape [batch_size, num_classes].
+        """
+        batch_size = 4
+        num_classes = 7
+        dummy_input = torch.randn(batch_size, 3, 48, 48)
+        # Instantiate MaskedResNet with ResNet-18 backbone and 7 output classes.
+        model = MaskedResNet(arch="resnet18", pretrained=False, num_classes=num_classes, dropout_p=0.3)
+        outputs = model(dummy_input)
+        # Check that output shape is (batch_size, num_classes)
+        self.assertEqual(outputs.shape, (batch_size, num_classes),
+                         "Output shape should be [batch_size, num_classes]")
 
-    # Loop over each emotion subfolder
-    for folder_name in emotion_labels:
-        subfolder_path = os.path.join(test_dir, folder_name)
-        if not os.path.exists(subfolder_path):
-            print(f"[WARNING] Subfolder not found: {subfolder_path}")
-            continue
+    def test_masked_resnet_backward(self):
+        """
+        Test that gradients can be computed through MaskedResNet.
+        This ensures that all parts of the network, including the masking modules,
+        are connected properly for backpropagation.
+        """
+        batch_size = 2
+        dummy_input = torch.randn(batch_size, 3, 48, 48)
+        model = MaskedResNet(arch="resnet18", pretrained=False, num_classes=7, dropout_p=0.3)
+        outputs = model(dummy_input)
+        targets = torch.tensor([0, 1])  # Dummy target class indices
+        criterion = nn.CrossEntropyLoss()
+        loss = criterion(outputs, targets)
+        loss.backward()
+        grad_found = any(param.grad is not None for param in model.parameters())
+        self.assertTrue(grad_found, "Gradients should be computed for model parameters.")
 
-        class_index = label_to_index[folder_name]
 
-        for fname in os.listdir(subfolder_path):
-            if fname.lower().endswith((".jpg", ".png", ".jpeg")):
-                img_path = os.path.join(subfolder_path, fname)
-                bgr_img = cv2.imread(img_path)
-                if bgr_img is None:
-                    print(f"[WARNING] Unable to read file: {img_path}")
-                    continue
+class TestPreprocessImage(unittest.TestCase):
+    def test_preprocess_image_output(self):
+        """
+        Test that preprocess_image converts an input ROI (NumPy array) to a torch.Tensor
+        with shape (1, 3, 48, 48) and type torch.float32.
+        """
+        import cv2
+        # Create a dummy colored image (simulate a face ROI), 60x60 in BGR format.
+        dummy_roi = np.random.randint(0, 256, (60, 60, 3), dtype=np.uint8)
+        processed_tensor = preprocess_image(dummy_roi)
+        self.assertEqual(processed_tensor.shape, (1, 3, 48, 48),
+                         "Processed tensor should have shape (1, 3, 48, 48).")
+        self.assertEqual(processed_tensor.dtype, torch.float32,
+                         "Processed tensor should be of type torch.float32.")
 
-                # Preprocess and predict
-                x_input = preprocess_image(bgr_img)
-                preds = model.predict(x_input)  # shape: (1,7)
-                predicted_class = np.argmax(preds[0])
-
-                y_true.append(class_index)
-                y_pred.append(predicted_class)
-
-    # Convert to numpy arrays
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-
-    if len(y_true) == 0:
-        print("[ERROR] No test images processed. Check your paths/folders.")
-        return
-
-    # Save the inference results
-    output_file = "inference_results.npz"
-    np.savez(output_file, y_true=y_true, y_pred=y_pred)
-    print(f"[INFO] Inference complete. Saved results to '{output_file}'")
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

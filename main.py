@@ -28,11 +28,7 @@ def main():
     setup_logging()
     logging.info("=== Border Control Facial Expression Recognition System ===")
 
-    # If you have a DB init step, uncomment or adjust as needed:
-    # init_db()
-    # logging.info("Database initialized (if not already).")
-
-    # Now launch the GUI
+    # Launch the GUI
     launch_gui()
 
 if __name__ == "__main__":
