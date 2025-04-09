@@ -1,3 +1,10 @@
+"""
+
+Baseline Model
+ResNet35
+
+"""
+
 import time
 import os
 import tensorflow as tf

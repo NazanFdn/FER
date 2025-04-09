@@ -1,6 +1,5 @@
 import os
 import torch
-import torch.nn.functional as F
 import torchvision.transforms as T
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader

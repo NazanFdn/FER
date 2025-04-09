@@ -1,3 +1,11 @@
+"""
+
+Baseline Model
+
+MobileNet
+
+"""
+
 import time
 import os
 import tensorflow as tf

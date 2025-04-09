@@ -1,4 +1,6 @@
-
+"""
+Training of the Masked ResNet model
+"""
 import torch
 import torch.nn as nn
 import torch.optim as optim

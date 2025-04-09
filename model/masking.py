@@ -1,5 +1,9 @@
 """
+
+Main model - Masked ResNet
+
 This code is a modified version of ResNet model.
+
 """
 
 import torch
