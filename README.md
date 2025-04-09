@@ -105,7 +105,6 @@ For further details, please refer to the full text of the DbCL v1.0.
 - **Python 3.8+**
 - **PyTorch** and **torchvision**
 - **OpenCV** (`opencv-python`)
-- **Pillow**
 - **NumPy**
 - **scikit-learn**
 - **tkinter** (usually included with Python)
