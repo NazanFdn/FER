@@ -1,4 +1,3 @@
-
 # Border Control Facial Expression Recognition System
 
 **Author:** Nazan Kafadaroglu  
@@ -29,36 +28,75 @@ The project consists of several key components:
 
 ---
 
-## Project Structure
+## Dataset
 
+The dataset consists of 48×48 pixel grayscale images of faces. The faces have been automatically registered so that they are roughly centered and occupy a similar area in each image. The task is to classify each face into one of seven emotion categories:
+- 0 = Angry
+- 1 = Disgust
+- 2 = Fear
+- 3 = Happy
+- 4 = Sad
+- 5 = Surprise
+- 6 = Neutral
 
-- **FER/**
-  - **data/**
-    - **train/** 
-    - **test/**
-  - **model/**
-    - **best_model.pth**  
-    - **masking.py**  
-    - **maskingTraining.py**  
-    - **mobilenet.py**  
-    - **oldMaskingTraining.py**  
-    - **resnet.py**  
-    - **resnet35.py**  
-    - **updated_resnet/**  
-  - **snapshots/**  
-  - **src/**
-    - **gui.py**  
-    - **opencv.py**  
-  - **test/**
-    - **classification_report.txt**  
-    - **evaluate_masked.py**  
-    - **test.py**  
-    - **test_results.npz**  
-  - **README.md**  
-  - **main.py**
+The training set consists of 28,709 examples, and the public test set consists of 3,589 examples.
+
+**Note:** The actual dataset is not uploaded to GitHub due to its large size.
+
+**Dataset License and Disclaimer:**  
+The dataset is provided under the **Database Contents License (DbCL) v1.0**.  
+- **Disclaimer:**  
+  Open Data Commons is not a law firm and does not provide legal services. This document does not create an agent-client relationship. Please consult a qualified legal professional before using the dataset. The content is provided "as is" without warranties, and the Licensor disclaims any liability for damages resulting from its use.
+
+For further details, please refer to the full text of the DbCL v1.0.
 
 ---
 
+## Project Structure
+
+- **FER/**
+  - **data/**
+    - **train/**  
+      Training images organized into subfolders by emotion (e.g., "0=Angry", "1=Disgust", etc.)
+    - **test/**  
+      Test images organized into the 7 emotion categories
+  - **model/**
+    - **best_model.pth**  
+      *(Not included in this repository due to its size exceeding 45 MB)*  
+    - **masking.py**  
+      Contains the definitions for MaskModule and MaskedResNet
+    - **maskingTraining.py**  
+      Training script for MaskedResNet
+    - **mobilenet.py**  
+      *(Optional)* Alternative model based on MobileNet
+    - **oldMaskingTraining.py**  
+      *(Optional)* Previous version of the training script
+    - **resnet.py**  
+      *(Optional)* Custom ResNet implementation
+    - **resnet35.py**  
+      *(Optional)* Custom ResNet variant
+    - **updated_resnet/**  
+      Directory containing updated ResNet implementations
+  - **snapshots/**  
+    Folder for storing snapshots and alerts captured during inference
+  - **src/**
+    - **gui.py**  
+      Main GUI application for the Border Control FER System
+    - **opencv.py**  
+      Contains OpenCV-based face detection helper functions
+  - **test/**
+    - **classification_report.txt**  
+      Generated classification report from testing model predictions
+    - **evaluate_masked.py**  
+      Script to evaluate the MaskedResNet model on the test set
+    - **test.py**  
+      Unit tests for model components and preprocessing functions
+    - **test_results.npz**  
+      (Optional) Saved test evaluation results
+  - **README.md**  
+    This documentation file
+  - **main.py**  
+    Entry point for launching the GUI (invokes `launch_gui`)
 
 ---
 
@@ -67,6 +105,7 @@ The project consists of several key components:
 - **Python 3.8+**
 - **PyTorch** and **torchvision**
 - **OpenCV** (`opencv-python`)
+- **Pillow**
 - **NumPy**
 - **scikit-learn**
 - **tkinter** (usually included with Python)
@@ -77,8 +116,8 @@ Install the necessary packages via pip:
 
 ```bash
 pip install torch torchvision opencv-python pillow numpy scikit-learn psutil matplotlib
-
 ```
+
 
 
 ---
@@ -121,3 +160,16 @@ After training and evaluation, the MaskedResNet model achieved the following per
 Overall Accuracy: 63.18%
 
 The results demonstrate that the proposed method achieves competitive performance across all emotion classes, with particularly strong performance for the "happy" and "surprise" classes. Slight trade-offs in accuracy for some classes reflect the inherent challenge of balancing the model's robustness and overall performance.
+
+
+
+
+
+---
+
+## License
+**Database Contents License (DbCL) v1.0**
+
+**The dataset used in this project is provided under the Database Contents License (DbCL) v1.0. Please note:**
+
+Open Data Commons is not a law firm and does not provide legal services. This document does not create an agent-client relationship. Please consult a qualified legal professional licensed in your jurisdiction for advice before using this dataset. The dataset is provided “as is” without warranties, and the Licensor disclaims any liability for damages resulting from its use.
