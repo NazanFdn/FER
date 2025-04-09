@@ -67,7 +67,6 @@ The project consists of several key components:
 - **Python 3.8+**
 - **PyTorch** and **torchvision**
 - **OpenCV** (`opencv-python`)
-- **Pillow**
 - **NumPy**
 - **scikit-learn**
 - **tkinter** (usually included with Python)
@@ -79,6 +78,46 @@ Install the necessary packages via pip:
 ```bash
 pip install torch torchvision opencv-python pillow numpy scikit-learn psutil matplotlib
 
+```
+
+
+---
+
+## Usage
+
+
+**Training the Model**
+Dataset Preparation:
+Place your training images in the data/train folder, with each subfolder representing an emotion class (e.g., 0=Angry, 1=Disgust, etc.). Ensure images are 48×48 pixels.
+
+**Run the Training Script**
+Execute the training script:
+
+
+```bash
+python path/to/your/training_script.py
+
+```
+
+The script performs data augmentation, normalizes images, handles class imbalance using a weighted sampler, and saves the best model (e.g., best_masked_resnet18_48x48.pth) based on validation accuracy.
+
+
+```bash
+python main.py
+```
+This launches a full-screen login window; upon successful login, the main interface appears. The system supports webcam streaming as well as video file playback for real-time emotion detection.
 
 
 
+
+
+
+
+---
+
+## Final Comparisons and Results
+After training and evaluation, the MaskedResNet model achieved the following performance on the test set:
+
+Overall Accuracy: 63.18%
+
+The results demonstrate that the proposed method achieves competitive performance across all emotion classes, with particularly strong performance for the "happy" and "surprise" classes. Slight trade-offs in accuracy for some classes reflect the inherent challenge of balancing the model's robustness and overall performance.
