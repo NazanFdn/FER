@@ -24,7 +24,6 @@ def set_seed(seed=42):
     torch.cuda.manual_seed_all(seed)
 
 def main():
-    # Set random seed for reproducibility
     set_seed(42)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,10 +32,8 @@ def main():
     # Path to your training data
     data_dir = "/Users/zeynep/PycharmProjects/FER/data/train"
 
-    # 1) Define transforms for training
     train_transforms = T.Compose([
         T.Grayscale(num_output_channels=3),
-        # Slightly smaller rotation to avoid too much distortion
         T.RandomRotation(15),
         T.RandomHorizontalFlip(),
         T.ToTensor(),
@@ -44,11 +41,9 @@ def main():
         T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
 
-    # 2) Load dataset with ImageFolder
     dataset = ImageFolder(root=data_dir, transform=train_transforms)
     print("Total images in dataset:", len(dataset))
 
-    # 3) Split dataset into train & validation
     val_ratio = 0.2
     val_size = int(len(dataset) * val_ratio)
     train_size = len(dataset) - val_size
@@ -56,7 +51,6 @@ def main():
                                                              generator=torch.Generator().manual_seed(42))
     print(f"Train subset: {train_size} images, Val subset: {val_size} images.")
 
-    # 4) Weighted sampler to handle imbalance
     train_labels = [dataset.samples[i][1] for i in train_subset.indices]
     classes = np.unique(train_labels)
 
@@ -64,17 +58,14 @@ def main():
     class_w_dict = {cls: w for cls, w in zip(classes, class_w)}
     print("Class Weights:", class_w_dict)
 
-    # WeightedRandomSampler
     sample_weights = [class_w_dict[label] for label in train_labels]
     sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
 
-    # 5) DataLoaders
     batch_size = 32
     num_workers = 2
     train_loader = DataLoader(train_subset, batch_size=batch_size, sampler=sampler, num_workers=num_workers)
     val_loader   = DataLoader(val_subset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-    # 6) Build Model
     model = MaskedResNet(
         arch="resnet18",
         pretrained=True,
@@ -82,21 +73,16 @@ def main():
         dropout_p=0.3
     ).to(device)
 
-    # 7) Define Loss & Optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
 
-    # Optionally add a learning rate scheduler:
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-    # or you could use: optim.lr_scheduler.ReduceLROnPlateau(...)
 
-    # 8) Training Loop
     epochs = 40
     best_val_acc = 0.0
     save_path = "best_masked_resnet18_48x48.pth"
 
     for epoch in range(1, epochs + 1):
-        # ---------- TRAIN ----------
         model.train()
         running_loss = 0.0
         correct = 0
@@ -119,7 +105,6 @@ def main():
         train_loss = running_loss / total
         train_acc = correct / total
 
-        # ---------- VALIDATE ----------
         model.eval()
         val_running_loss = 0.0
         val_correct = 0
@@ -144,7 +129,6 @@ def main():
               f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | "
               f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
 
-        # ---------- CHECKPOINT ----------
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(model.state_dict(), save_path)

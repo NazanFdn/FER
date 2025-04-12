@@ -148,7 +148,7 @@ class BorderControlFERGUI:
         # Define emotion classes.
         self.emotion_labels = ["Angry", "Disgust", "Fear", "Happy", "Neutral", "Sad", "Surprise"]
         self.high_risk_emotions = {"Angry", "Fear"}
-        self.danger_threshold = 0.80
+        self.danger_threshold = 0.80        # Danger threshold set to 0.8 based on experimental results.
 
         # Flags/variables for webcam/video processing.
         self.is_webcam_running = False
@@ -411,7 +411,8 @@ class BorderControlFERGUI:
                 self.display_image(image_bgr)
             self.root.after(0, update_ui)
         except Exception as e:
-            self.root.after(0, lambda: self.results_label.config(text=f"Error: {str(e)}"))
+            self.error=e
+            self.root.after(0, lambda: self.results_label.config(text=f"Error: {str(self.error)}"))
 
     ############################################################################
     # Video Playback Methods

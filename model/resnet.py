@@ -17,20 +17,14 @@ import os
 from tensorflow.keras.optimizers import AdamW
 import tensorflow as tf
 
-# Set the TensorFlow backend to use MPS (Metal Performance Shaders)
-# tf.config.experimental.set_memory_growth(tf.config.list_physical_devices('GPU')[0], True)
-
 print("TensorFlow version:", tf.__version__)
 print("GPU available:", tf.config.list_physical_devices('GPU'))
 
 
-# mixed precision for faster training
 mixed_precision.set_global_policy("mixed_float16")
 
-# Set dataset directory
 data_dir = os.environ.get("DATA_DIR", "/Users/zeynep/PycharmProjects/FER/data/train")
 
-# Define data generators
 train_datagen = ImageDataGenerator(
     rescale=1.0/255.0,
     validation_split=0.2,
@@ -46,7 +40,6 @@ train_datagen = ImageDataGenerator(
 batch_size = 8
 img_size = (64, 64)
 
-# Load Train & Validation Data from `data_dir`
 train_data = train_datagen.flow_from_directory(
     data_dir, target_size=img_size, color_mode='grayscale',
     class_mode='categorical', batch_size=batch_size, shuffle=True, subset='training'
@@ -60,7 +53,6 @@ val_data = train_datagen.flow_from_directory(
 # Load Pretrained ResNet50 model
 base_model = ResNet50(weights="imagenet", include_top=False, input_shape=(64, 64, 3))
 
-# Convert grayscale to RGB using 1x1 convolution
 input_layer = tf.keras.layers.Input(shape=(64, 64, 1))
 rgb_layer = tf.keras.layers.Conv2D(3, (1, 1), activation=None)(input_layer)
 base_output = base_model(rgb_layer)
@@ -84,7 +76,7 @@ model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["ac
 early_stop = EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True, verbose=1)
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6, verbose=1)
 
-# Track Training Time
+# Training Time
 start_time = time.time()
 
 #  Train the Model
@@ -97,7 +89,6 @@ history = model.fit(
     callbacks=[early_stop, reduce_lr]
 )
 
-#  Calculate Training Time
 end_time = time.time()
 training_time = end_time - start_time
 
